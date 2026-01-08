@@ -4,6 +4,7 @@ A clean, educational implementation of a transformer-based language model writte
 
 ## Features
 
+- **Training Support**: Backpropagation and training loop implementation
 - **Pure Go Implementation**: No dependencies on TensorFlow, PyTorch, or other ML frameworks
 - **Clean Architecture**: Well-organized package structure with separation of concerns
 - **Educational**: Clear code with proper error handling and documentation
@@ -63,10 +64,10 @@ go mod tidy
 
 ## Usage
 
-### Basic Generation
+### Training and Generation
 
 ```bash
-# Run the model
+# Run the model (Training + Generation)
 go run main.go
 ```
 
@@ -162,22 +163,23 @@ probs = Softmax(logits)
 All operations are implemented from scratch:
 
 - **Matrix Multiplication**: Standard O(n³) algorithm
+- **Gradients (Backpropagation)**: Manual backward pass for all operations
 - **Softmax**: Numerically stable with max subtraction
 - **GELU Activation**: Gaussian Error Linear Unit
 - **Layer Normalization**: Per-row mean/variance normalization
+- **Cross Entropy Loss**: For training evaluation
 
 ## Limitations
 
 - **Small Vocabulary**: Limited to words in the training set
 - **Greedy Decoding**: Uses argmax instead of sampling
-- **No Training Code**: Only inference is supported
 - **CPU Only**: No GPU acceleration
 - **Simple Tokenizer**: Word-level, no subword tokenization
 
 ## Future Improvements
 
 - [ ] Add BPE/WordPiece tokenization
-- [ ] Implement training from scratch
+- [x] Implement training from scratch
 - [ ] Add temperature-based sampling
 - [ ] Support beam search
 - [ ] Add more activation functions
