@@ -13,6 +13,7 @@ import (
 type Weights struct {
 	Config *config.ModelConfig
 	Data   map[string]interface{}
+	Grads  map[string]interface{} // Store gradients here
 }
 
 // NewWeights creates a new Weights instance
@@ -20,6 +21,7 @@ func NewWeights(cfg *config.ModelConfig) *Weights {
 	return &Weights{
 		Config: cfg,
 		Data:   make(map[string]interface{}),
+		Grads:  make(map[string]interface{}),
 	}
 }
 

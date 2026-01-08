@@ -20,36 +20,44 @@ func NewTransformer(weights *Weights) *Transformer {
 
 // Forward performs a forward pass through the transformer
 func (t *Transformer) Forward(tokens []int) (tmath.Matrix, error) {
+	logits, _, err := t.ForwardTrain(tokens)
+	return logits, err
+}
+
+// ForwardTrain performs a forward pass returning cache for training
+func (t *Transformer) ForwardTrain(tokens []int) (tmath.Matrix, *TransformerCache, error) {
 	seqLen := len(tokens)
 	if seqLen == 0 {
-		return nil, fmt.Errorf("empty token sequence")
+		return nil, nil, fmt.Errorf("empty token sequence")
 	}
 
 	// Get embeddings
 	tokenEmbed, err := t.Weights.GetMatrix("token_embed.weight")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get token embeddings: %w", err)
+		return nil, nil, fmt.Errorf("failed to get token embeddings: %w", err)
 	}
 	posEmbed, err := t.Weights.GetMatrix("pos_embed.weight")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get position embeddings: %w", err)
+		return nil, nil, fmt.Errorf("failed to get position embeddings: %w", err)
 	}
 
 	// Validate sequence length
 	if seqLen > len(posEmbed) {
-		return nil, fmt.Errorf("sequence length %d exceeds max position embeddings %d", seqLen, len(posEmbed))
+		return nil, nil, fmt.Errorf("sequence length %d exceeds max position embeddings %d", seqLen, len(posEmbed))
 	}
 
 	// Create initial embeddings
 	x := tmath.NewMatrix(seqLen, t.Weights.Config.DModel)
 	for i, tokenID := range tokens {
 		if tokenID < 0 || tokenID >= len(tokenEmbed) {
-			return nil, fmt.Errorf("invalid token ID %d at position %d", tokenID, i)
+			return nil, nil, fmt.Errorf("invalid token ID %d at position %d", tokenID, i)
 		}
 		for j := 0; j < t.Weights.Config.DModel; j++ {
 			x[i][j] = tokenEmbed[tokenID][j] + posEmbed[i][j]
 		}
 	}
+
+	inputs := x // cache inputs (sum of embeds)
 
 	// Create causal mask (lower triangular)
 	mask := tmath.NewMatrix(seqLen, seqLen)
@@ -60,35 +68,47 @@ func (t *Transformer) Forward(tokens []int) (tmath.Matrix, error) {
 	}
 
 	// Process through transformer blocks
+	blockCaches := make([]*TransformerBlockCache, t.Weights.Config.NLayers)
 	for i := 0; i < t.Weights.Config.NLayers; i++ {
-		x, err = TransformerBlock(x, i, t.Weights, mask)
+		var cache *TransformerBlockCache
+		x, cache, err = TransformerBlock(x, i, t.Weights, mask)
 		if err != nil {
-			return nil, fmt.Errorf("block %d failed: %w", i, err)
+			return nil, nil, fmt.Errorf("block %d failed: %w", i, err)
 		}
+		blockCaches[i] = cache
 	}
 
 	// Final layer normalization
 	lnFW, err := t.Weights.GetVector("ln_f.weight")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get final norm weights: %w", err)
+		return nil, nil, fmt.Errorf("failed to get final norm weights: %w", err)
 	}
 	lnFB, err := t.Weights.GetVector("ln_f.bias")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get final norm bias: %w", err)
+		return nil, nil, fmt.Errorf("failed to get final norm bias: %w", err)
 	}
+
+	finalNormIn := x
 	x = tmath.LayerNorm(x, lnFW, lnFB, t.Weights.Config.Eps)
 
 	// Language model head
 	lmHead, err := t.Weights.GetMatrix("lm_head.weight")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get language model head: %w", err)
+		return nil, nil, fmt.Errorf("failed to get language model head: %w", err)
 	}
 	logits, err := tmath.MatMul(x, tmath.Transpose(lmHead))
 	if err != nil {
-		return nil, fmt.Errorf("failed to compute logits: %w", err)
+		return nil, nil, fmt.Errorf("failed to compute logits: %w", err)
 	}
 
-	return logits, nil
+	cache := &TransformerCache{
+		Inputs:      inputs,
+		BlockCaches: blockCaches,
+		FinalNormIn: finalNormIn,
+		Logits:      logits,
+	}
+
+	return logits, cache, nil
 }
 
 // Generate generates text continuation
